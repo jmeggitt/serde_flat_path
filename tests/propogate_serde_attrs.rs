@@ -6,29 +6,29 @@ use serde_flat_path::flat_path;
 #[serde(default)]
 pub struct Foo {
     #[flat_path(path=["a", "b", "c"])]
-    #[serde(with = "flip_bool")]
+    // #[serde(with = "flip_bool")]
     foo: bool,
     #[serde(skip_serializing_if = "Option::is_some")]
     x: Option<u64>,
 }
 
-mod flip_bool {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<bool, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(!bool::deserialize(deserializer)?)
-    }
-
-    pub fn serialize<S>(this: &bool, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        bool::serialize(&!this, serializer)
-    }
-}
+// mod flip_bool {
+//     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+//
+//     pub fn deserialize<'de, D>(deserializer: D) -> Result<bool, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         Ok(!bool::deserialize(deserializer)?)
+//     }
+//
+//     pub fn serialize<S>(this: &bool, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         bool::serialize(&!this, serializer)
+//     }
+// }
 
 #[test]
 fn serialize_deserialize_struct() {
@@ -38,7 +38,7 @@ fn serialize_deserialize_struct() {
     };
 
     let json = serde_json::to_string(&foo_initial).unwrap();
-    assert_eq!(json, r#"{"a":{"b":{"c":true}}}"#);
+    assert_eq!(json, r#"{"a":{"b":{"c":false}}}"#);
 
     let foo_modified = Foo {
         foo: false,

@@ -2,7 +2,8 @@ use proc_macro2::Delimiter;
 use proc_macro2::TokenTree as TokenTree2;
 use quote::ToTokens;
 use std::collections::HashSet;
-use syn::{Attribute, Error, Fields, LitStr};
+use syn::punctuated::Punctuated;
+use syn::{Attribute, Error, Field, LitStr, Token};
 
 /// There is probably a better approach to this. I attempted to use darling to parse the attributes,
 /// but it had trouble with the string literals. Since it is fairly simple, I decided to just
@@ -106,48 +107,21 @@ pub fn extract_attributes_by_path(attrs: &mut Vec<Attribute>, path: &str) -> Vec
     output
 }
 
-// pub fn has_overlapping_paths(input: TokenStream) -> syn::Result<bool> {
-//     let mut root_fields = HashSet::new();
-//     let mut has_overlaps = false;
-//
-//     visit_all_fields_mut(input, |field| {
-//         for attribute in &field.attrs {
-//             if attribute.path.clone().into_token_stream().to_string() != "flat_path" {
-//                 continue
-//             }
-//
-//             if let Some(item) = parse_attr(attribute)?.get(0) {
-//                 let ident = item.value();
-//                 if root_fields.contains(&ident) {
-//                     has_overlaps = true;
-//                 }
-//                 root_fields.insert(ident);
-//             }
-//         }
-//
-//         Ok(())
-//     })?;
-//
-//     Ok(has_overlaps)
-// }
-
-pub fn has_overlapping_paths(fields: &Fields) -> syn::Result<bool> {
+pub fn has_overlapping_paths(fields: &Punctuated<Field, Token![,]>) -> syn::Result<bool> {
     let mut root_fields = HashSet::new();
     let mut has_overlaps = false;
 
-    if let Fields::Named(fields) = fields {
-        for attribute in fields.named.iter().flat_map(|field| field.attrs.iter()) {
-            if attribute.path.clone().into_token_stream().to_string() != "flat_path" {
-                continue;
-            }
+    for attribute in fields.iter().flat_map(|field| field.attrs.iter()) {
+        if attribute.path.clone().into_token_stream().to_string() != "flat_path" {
+            continue;
+        }
 
-            if let Some(item) = parse_attr(attribute)?.get(0) {
-                let ident = item.value();
-                if root_fields.contains(&ident) {
-                    has_overlaps = true;
-                }
-                root_fields.insert(ident);
+        if let Some(item) = parse_attr(attribute)?.get(0) {
+            let ident = item.value();
+            if root_fields.contains(&ident) {
+                has_overlaps = true;
             }
+            root_fields.insert(ident);
         }
     }
 

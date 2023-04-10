@@ -9,10 +9,7 @@ use syn::{
 };
 
 mod attr;
-mod util;
-
 use attr::*;
-use util::*;
 
 #[proc_macro_attribute]
 pub fn flat_path(attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -103,6 +100,18 @@ fn perform_simple_flat_path_addition(
     named_fields: &mut Punctuated<Field, Token![,]>,
 ) -> syn::Result<TokenStream2> {
     let mut paths = Vec::new();
+
+    #[cfg(not(feature = "allow_overlap"))]
+    if has_overlapping_paths(named_fields)? {
+        return Err(Error::new(
+            Span::call_site(),
+            "Appling flat_path would result in \
+        overlapping paths. At the current time, this behavior is not yet supported. Please create \
+        an intermediate type to prevent these overlaps from occuring. Alternatively, the \
+        `allow_overlap` feature can be enabled to bypass this error, but may result in malformed \
+        results.",
+        ));
+    }
 
     for field in named_fields.iter_mut() {
         let flat_path_attributes = extract_attributes_by_path(&mut field.attrs, "flat_path");
@@ -201,7 +210,9 @@ impl FlatField {
         let mut tokens = TokenStream2::new();
 
         let path_length = self.flat_path.len();
-        let placeholders = placeholder_idents(path_length);
+        let placeholders = (0..path_length)
+            .map(|x| format_ident!("_{}", x))
+            .collect::<Vec<_>>();
         for (index, field_name) in self.flat_path[..path_length - 1].iter().enumerate() {
             let ident = &placeholders[index];
             let next = &placeholders[index + 1];

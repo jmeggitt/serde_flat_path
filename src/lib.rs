@@ -57,6 +57,7 @@ fn flat_path_struct_impl(mut item: ItemStruct) -> syn::Result<TokenStream2> {
         #[allow(non_snake_case)]
         #[automatically_derived]
         mod #module_path {
+            use super::*;
             #flat_path_conversions
         }
     })
@@ -69,7 +70,7 @@ fn flat_path_enum_impl(mut item: ItemEnum) -> syn::Result<TokenStream2> {
     for variant in item.variants.iter_mut() {
         let named_fields = match named_fields(&mut variant.fields)? {
             Some(v) => v,
-            None => return Ok(quote!(#item)),
+            None => continue,
         };
 
         let variant_name = &variant.ident;
@@ -78,6 +79,7 @@ fn flat_path_enum_impl(mut item: ItemEnum) -> syn::Result<TokenStream2> {
 
         variant_impls.push(quote! {
             pub mod #variant_name {
+                use super::*;
                 #flat_path_conversions
             }
         });
@@ -90,6 +92,7 @@ fn flat_path_enum_impl(mut item: ItemEnum) -> syn::Result<TokenStream2> {
         #[allow(non_snake_case)]
         #[automatically_derived]
         mod #module_name {
+            use super::*;
             #(#variant_impls)*
         }
     })
@@ -174,22 +177,13 @@ fn generate_flat_path_module(flat_fields: Vec<FlatField>) -> TokenStream2 {
 
         tokens.extend(quote! {
             pub mod #field {
+                use super::*;
                 #contents
             }
         });
     }
 
-    // let module_name = Ident::new(module_name, Span::call_site());
-
     tokens
-    // quote! {
-    //     #[doc(hidden)]
-    //     #[allow(non_snake_case)]
-    //     #[automatically_derived]
-    //     mod #module_name {
-    //         #tokens
-    //     }
-    // }
 }
 
 struct FlatField {
@@ -214,7 +208,7 @@ impl FlatField {
 
             tokens.extend(quote! {
                 #[repr(transparent)]
-                #[derive(::serde::Serialize, ::serde::Deserialize)]
+                #[derive(::serde::Serialize, ::serde::Deserialize, Default)]
                 struct #ident<T: ?Sized> {
                     #[serde(rename=#field_name)]
                     _0: #next<T>
@@ -229,7 +223,7 @@ impl FlatField {
         let chain = std::iter::repeat(format_ident!("_0")).take(path_length);
         tokens.extend(quote! {
             #[repr(transparent)]
-            #[derive(::serde::Serialize, ::serde::Deserialize)]
+            #[derive(::serde::Serialize, ::serde::Deserialize, Default)]
             struct #last_ident<T: ?Sized> {
                 #[serde(rename=#last_field_name)]
                 #(#serde_attributes)*
@@ -263,113 +257,4 @@ impl FlatField {
 
         tokens
     }
-
-    // /// This approach has a couple of advantages and disadvantages which prevent it from being used
-    // /// everywhere.
-    // ///
-    // /// Pros:
-    // ///  - No copying/cloning fields
-    // ///  - No unsafe code
-    // ///  - Field names do not need to be valid rust identifiers
-    // ///  - Does not require information about the struct it was used in
-    // /// Cons:
-    // ///  - Unable to propogate serde attributes to field
-    // ///  - Will not attempt to merge related paths on a single struct
-    // ///
-    // /// When supplied with `#[flat_path(path = ["a", "b", "c"])]`, it will generate the following
-    // /// code.
-    // /// ```rust,norun
-    // /// struct _0<'a, T: ?Sized>(&'a T);
-    // /// struct _1<'a, T: ?Sized>(&'a T);
-    // /// struct _2<'a, T: ?Sized>(&'a T);
-    // /// impl<'a, T: ?Sized + ::serde::Serialize> ::serde::Serialize for _0<'a, T> {
-    // ///     #[inline]
-    // ///     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    // ///         where
-    // ///             S: ::serde::Serializer,
-    // ///     {
-    // ///         let mut state = ::serde::Serializer::serialize_struct(serializer, "", 1)?;
-    // ///         ::serde::ser::SerializeStruct::serialize_field(&mut state, "a", &_1(self.0))?;
-    // ///         ::serde::ser::SerializeStruct::end(state)
-    // ///     }
-    // /// }
-    // /// impl<'a, T: ?Sized + ::serde::Serialize> ::serde::Serialize for _1<'a, T> {
-    // ///     #[inline]
-    // ///     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    // ///         where
-    // ///             S: ::serde::Serializer,
-    // ///     {
-    // ///         let mut state = ::serde::Serializer::serialize_struct(serializer, "", 1)?;
-    // ///         ::serde::ser::SerializeStruct::serialize_field(&mut state, "b", &_2(self.0))?;
-    // ///         ::serde::ser::SerializeStruct::end(state)
-    // ///     }
-    // /// }
-    // /// impl<'a, T: ?Sized + ::serde::Serialize> ::serde::Serialize for _2<'a, T> {
-    // ///     #[inline]
-    // ///     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    // ///         where
-    // ///             S: ::serde::Serializer,
-    // ///     {
-    // ///         let mut state = ::serde::Serializer::serialize_struct(serializer, "", 1)?;
-    // ///         ::serde::ser::SerializeStruct::serialize_field(&mut state, "c", self.0)?;
-    // ///         ::serde::ser::SerializeStruct::end(state)
-    // ///     }
-    // /// }
-    // /// pub fn serialize<S, T>(this: &T, serializer: S) -> Result<S::Ok, S::Error>
-    // ///     where
-    // ///         T: ?Sized + ::serde::Serialize,
-    // ///         S: ::serde::Serializer,
-    // /// {
-    // ///     ::serde::Serialize::serialize(&_0(this), serializer)
-    // /// }
-    // /// ```
-    // fn serialize_with_ref_handoff(&self) -> TokenStream2 {
-    //     let mut tokens = TokenStream2::new();
-    //
-    //     let mut placeholder_structs = Vec::new();
-    //     for level in 0..self.flat_path.len() {
-    //         let ident = format_ident!("_{}", level);
-    //
-    //         tokens.extend(quote! {
-    //             struct #ident<'a, T: ?Sized>(&'a T);
-    //         });
-    //         placeholder_structs.push(ident);
-    //     }
-    //
-    //     for n in 0..placeholder_structs.len() {
-    //         let current = &placeholder_structs[n];
-    //         let item_name = &self.flat_path[n];
-    //
-    //         let next = if n < placeholder_structs.len() - 1 {
-    //             let next = &placeholder_structs[n + 1];
-    //             quote!(&#next(self.0))
-    //         } else {
-    //             quote!(self.0)
-    //         };
-    //
-    //         tokens.extend(quote! {
-    //             impl<'a, T: ?Sized + ::serde::Serialize> ::serde::Serialize for #current<'a, T> {
-    //                 #[inline]
-    //                 fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    //                     where S: ::serde::Serializer
-    //                 {
-    //                     let mut state = ::serde::Serializer::serialize_struct(serializer, "", 1)?;
-    //                     ::serde::ser::SerializeStruct::serialize_field(&mut state, #item_name, #next)?;
-    //                     ::serde::ser::SerializeStruct::end(state)
-    //                 }
-    //             }
-    //         });
-    //     }
-    //
-    //     tokens.extend(quote! {
-    //         pub fn serialize<S, T>(this: &T, serializer: S) -> Result<S::Ok, S::Error>
-    //             where T: ?Sized + ::serde::Serialize,
-    //                   S: ::serde::Serializer
-    //         {
-    //             ::serde::Serialize::serialize(&_0(this), serializer)
-    //         }
-    //     });
-    //
-    //     tokens
-    // }
 }

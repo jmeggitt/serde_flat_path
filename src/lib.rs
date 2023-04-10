@@ -1,3 +1,32 @@
+//! `flat_path` can be applied to any named field within a `struct` or `enum`. The `#[flat_path]`
+//! attribute must be applied before the serialize/deserialize `#[derive(...)]` so that it can apply
+//! the necessary serde attributes before serde performs macro expansion for its derive macros.
+//! Similar to derive macros, the original type is not altered.
+//!
+//! For cases where field names contain `.` or additional verbosity is desired,
+//! `#[flat_path("a.b.c")]` may also be written as `#[flat_path(path = ["a", "b", "c"])]`. These two
+//! forms are equivalent and no distinction is made between regarding macro expansion.
+//!
+//! `#[serde(...)]` attributes are also moved from `#[flat_path(...)]` fields to the final field
+//! within the path. During this process, the order of attributes remains the same.
+//!
+//! ```rust
+//! # use serde::{Serialize, Deserialize};
+//! # use serde_flat_path::flat_path;
+//! #[flat_path]
+//! #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Default)]
+//! #[serde(default)]
+//! pub struct Foo {
+//!     foo: bool,
+//!     #[flat_path(path=["a", "b", "c"])]
+//!     x: Option<u64>,
+//!     #[serde(rename="INDEX")]
+//!     index_number: u32,
+//! }
+//! ```
+//!
+//! For more examples see the repository's tests folder.
+
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
@@ -9,8 +38,10 @@ use syn::{
 };
 
 mod attr;
+
 use attr::*;
 
+/// For documentation go to the [crate] root page.
 #[proc_macro_attribute]
 pub fn flat_path(attr: TokenStream, input: TokenStream) -> TokenStream {
     match flat_path_impl(attr, input) {

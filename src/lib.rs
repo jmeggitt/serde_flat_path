@@ -19,6 +19,7 @@
 //! pub struct Foo {
 //!     foo: bool,
 //!     #[flat_path(path=["a", "b", "c"])]
+//!     #[serde(skip_serializing_if="Option::is_none")]
 //!     x: Option<u64>,
 //!     #[serde(rename="INDEX")]
 //!     index_number: u32,
@@ -34,7 +35,7 @@ use quote::{format_ident, quote, ToTokens};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, Attribute, Error, Field, Fields, ItemEnum, ItemStruct, LitStr, Path, Token,
+    parse_quote, Attribute, Error, Field, Fields, ItemEnum, ItemStruct, LitStr, Path, Token, Type,
 };
 
 mod attr;
@@ -181,6 +182,7 @@ fn perform_simple_flat_path_addition(
 
         paths.push(FlatField {
             ident: field_name,
+            ty: field.ty.clone(),
             flat_path,
             serde_attributes,
         });
@@ -228,13 +230,96 @@ fn generate_flat_path_module(flat_fields: Vec<FlatField>) -> TokenStream2 {
 
 struct FlatField {
     ident: Ident,
+    ty: Type,
     flat_path: Vec<LitStr>,
     serde_attributes: Vec<Attribute>,
 }
 
 impl FlatField {
     fn generate_serialize_with(&self) -> TokenStream2 {
-        self.with_structural_derive()
+        if self.serde_attributes.is_empty() {
+            return self.with_structural_derive();
+        }
+
+        // This is more prone to errors due to generics than with_structural_derive, but it is able
+        // to handle serde bounds properly so it is preferred for those cases.
+        self.with_concrete_type_derive()
+    }
+
+    fn with_concrete_type_derive(&self) -> TokenStream2 {
+        let mut tokens = TokenStream2::new();
+
+        let ty_tokens = self.ty.clone().into_token_stream();
+        let serialize_bound = LitStr::new(
+            &format!("{}: ::serde::Serialize", &ty_tokens),
+            Span::call_site(),
+        );
+        let deserialize_bound = LitStr::new(
+            &format!("{}: ::serde::de::DeserializeOwned", &ty_tokens),
+            Span::call_site(),
+        );
+
+        let path_length = self.flat_path.len();
+        let placeholders = (0..path_length)
+            .map(|x| format_ident!("_{}", x))
+            .collect::<Vec<_>>();
+        for (index, field_name) in self.flat_path[..path_length - 1].iter().enumerate() {
+            let ident = &placeholders[index];
+            let next = &placeholders[index + 1];
+
+            tokens.extend(quote! {
+                #[repr(transparent)]
+                #[derive(::serde::Serialize, ::serde::Deserialize, Default)]
+                #[serde(bound(serialize = #serialize_bound, deserialize = #deserialize_bound))]
+                struct #ident {
+                    #[serde(rename=#field_name)]
+                    _0: #next
+                }
+            });
+        }
+
+        let last_ident = &placeholders[path_length - 1];
+        let last_field_name = &self.flat_path[path_length - 1];
+        let serde_attributes = &self.serde_attributes;
+        let field_type = &self.ty;
+
+        let chain = std::iter::repeat(format_ident!("_0")).take(path_length);
+        tokens.extend(quote! {
+            #[repr(transparent)]
+            #[derive(::serde::Serialize, ::serde::Deserialize, Default)]
+            #[serde(bound(serialize = #serialize_bound, deserialize = #deserialize_bound))]
+            struct #last_ident {
+                #[serde(rename=#last_field_name)]
+                #(#serde_attributes)*
+                _0: #field_type
+            }
+
+            #[inline(always)]
+            pub fn deserialize<'de, D>(deserializer: D) -> Result<#field_type, D::Error>
+                where #field_type: ::serde::Deserialize<'de>,
+                      D: ::serde::Deserializer<'de>,
+            {
+                match <_0 as ::serde::Deserialize>::deserialize(deserializer) {
+                    Ok(value) => Ok(value #(.#chain)*),
+                    Err(e) => Err(e)
+                }
+            }
+
+            #[inline(always)]
+            pub fn serialize<S>(this: &#field_type, serializer: S) -> Result<S::Ok, S::Error>
+                where #field_type: ::serde::Serialize,
+                      S: ::serde::Serializer
+            {
+                // # Safety
+                // This is safe as all members within the chain use repr(transparent) to a value of
+                // T. Furthermore, data is not accessed via this reference until it is converted
+                // back to &T at the end of the chain.
+                let chain_ref = unsafe { ::std::mem::transmute::<&#field_type, &_0>(this) };
+                ::serde::Serialize::serialize(chain_ref, serializer)
+            }
+        });
+
+        tokens
     }
 
     fn with_structural_derive(&self) -> TokenStream2 {

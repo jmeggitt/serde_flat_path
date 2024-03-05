@@ -255,7 +255,7 @@ impl FlatField {
             Span::call_site(),
         );
         let deserialize_bound = LitStr::new(
-            &format!("{}: ::serde::de::DeserializeOwned", &ty_tokens),
+            &format!("{}: ::serde::de::Deserialize<'de>", &ty_tokens),
             Span::call_site(),
         );
 

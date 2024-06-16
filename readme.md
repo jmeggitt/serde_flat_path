@@ -1,4 +1,7 @@
 # `serde_flat_path`
+[![build_status](https://github.com/jmeggitt/serde_flat_path/actions/workflows/ci.yml/badge.svg)](https://github.com/jmeggitt/serde_flat_path/actions)
+[![crates.io](https://img.shields.io/crates/v/serde_flat_path.svg)](https://crates.io/crates/serde_flat_path)
+
 This crate was designed to solve the problem of needing to manually create placeholder structs or untyped values (such
 as `serde_json::Value`). For example, take this json file:
 ```json

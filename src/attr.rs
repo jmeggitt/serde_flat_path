@@ -116,7 +116,7 @@ pub fn has_overlapping_paths(fields: &Punctuated<Field, Token![,]>) -> syn::Resu
             continue;
         }
 
-        if let Some(item) = parse_attr(attribute)?.get(0) {
+        if let Some(item) = parse_attr(attribute)?.first() {
             let ident = item.value();
             if root_fields.contains(&ident) {
                 has_overlaps = true;
